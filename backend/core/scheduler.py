@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 class IngestScheduler:
     def __init__(self):
-        self.scheduler = AsyncIOScheduler()
+        self.scheduler = AsyncIOScheduler(
+            job_defaults={"misfire_grace_time": 300, "max_instances": 3},
+        )
 
     async def start(self):
         try:

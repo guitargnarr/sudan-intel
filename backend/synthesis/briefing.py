@@ -1,7 +1,7 @@
 """Briefing generator -- synthesizes data into AI-generated intelligence briefs."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,7 @@ class BriefingGenerator:
         self.ollama = OllamaClient()
 
     async def generate_national_brief(self, db: AsyncSession) -> str:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
 
         # Check if Ollama is available
         if not await self.ollama.is_available():

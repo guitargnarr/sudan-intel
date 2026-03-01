@@ -2,7 +2,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 from sqlalchemy import select
@@ -50,7 +50,7 @@ class BaseIngester(ABC):
             return {"source": self.source_name, "status": "error", "error": error_msg}
 
     async def _update_status(self, db: AsyncSession, success: bool, count: int = 0, error: str = None):
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         result = await db.execute(
             select(DataSourceStatus).where(DataSourceStatus.source_name == self.source_name)
         )
