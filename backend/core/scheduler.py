@@ -1,6 +1,7 @@
 """APScheduler for data ingestion and synthesis cron jobs."""
 
 import logging
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -15,6 +16,8 @@ class IngestScheduler:
 
     async def start(self):
         try:
+            now = datetime.now(timezone.utc)
+
             self.scheduler.add_job(
                 self._run_hdx_hapi,
                 "interval",
@@ -22,6 +25,7 @@ class IngestScheduler:
                 id="hdx_hapi",
                 name="HDX HAPI Ingestion",
                 replace_existing=True,
+                next_run_time=now,
             )
 
             self.scheduler.add_job(
@@ -31,6 +35,7 @@ class IngestScheduler:
                 id="gdelt",
                 name="GDELT News Ingestion",
                 replace_existing=True,
+                next_run_time=now,
             )
 
             self.scheduler.add_job(
@@ -40,6 +45,7 @@ class IngestScheduler:
                 id="unhcr",
                 name="UNHCR Displacement Ingestion",
                 replace_existing=True,
+                next_run_time=now,
             )
 
             self.scheduler.add_job(
