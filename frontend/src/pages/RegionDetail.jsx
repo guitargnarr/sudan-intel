@@ -55,12 +55,18 @@ export default function RegionDetail() {
 
   const totalEvents = conflicts.reduce((s, c) => s + (c.events || 0), 0);
   const totalFatalities = conflicts.reduce((s, c) => s + (c.fatalities || 0), 0);
-  const totalIDPs = displacements.reduce((s, d) => s + (d.population || 0), 0);
+
+  // IDPs: use latest period only (stock figure, not cumulative)
+  const totalIDPs = region?.latest_idps ?? displacements.reduce((s, d) => s + (d.population || 0), 0);
   const regionName = region?.admin1_name || conflicts[0]?.admin1 || displacements[0]?.admin1 || code;
 
-  // IPC distribution
+  // IPC distribution -- latest period only
   const ipcDist = {};
-  for (const f of foodSecurity) {
+  const latestIPC = region?.latest_ipc_period;
+  const relevantFS = latestIPC
+    ? foodSecurity.filter(f => f.date === latestIPC)
+    : foodSecurity;
+  for (const f of relevantFS) {
     const p = f.phase || 'unknown';
     ipcDist[p] = (ipcDist[p] || 0) + (f.population || 0);
   }

@@ -59,15 +59,28 @@ class HDXHAPIIngester(BaseIngester):
 
         return total
 
-    async def _paginate(self, url: str, headers: dict, params: dict = None) -> list:
-        """Paginate through HDX HAPI results with caps."""
+    async def _paginate(
+        self, url: str, headers: dict, params: dict = None,
+        max_records: int = MAX_RECORDS,
+    ) -> list:
+        """Paginate through HDX HAPI results.
+
+        Fetches all pages, filters to recent data (>= MIN_YEAR),
+        and caps at max_records to prevent runaway ingestion.
+        """
         all_results = []
         offset = 0
         limit = 1000
         base_params = params or {}
+        total_fetched = 0
 
-        while len(all_results) < MAX_RECORDS:
-            p = {**base_params, "offset": offset, "limit": limit, "location_code": LOCATION_CODE}
+        while len(all_results) < max_records:
+            p = {
+                **base_params,
+                "offset": offset,
+                "limit": limit,
+                "location_code": LOCATION_CODE,
+            }
             resp = await self.client.get(url, headers=headers, params=p)
             resp.raise_for_status()
             data = resp.json()
@@ -75,21 +88,23 @@ class HDXHAPIIngester(BaseIngester):
             if not results:
                 break
 
-            # Filter to recent data only
-            recent = [r for r in results if is_recent(r.get("reference_period_start"))]
+            total_fetched += len(results)
+            recent = [
+                r for r in results
+                if is_recent(r.get("reference_period_start"))
+            ]
             all_results.extend(recent)
-
-            # If we're past the recent data window, stop
-            if recent and not is_recent(results[-1].get("reference_period_start", "")):
-                # Data is sorted old-to-new, we haven't reached recent yet
-                pass
 
             offset += limit
             if len(results) < limit:
                 break
 
-        logger.info("Fetched %d recent records from %s", len(all_results), url.split("/")[-1])
-        return all_results
+        logger.info(
+            "Fetched %d recent of %d total from %s",
+            len(all_results), total_fetched,
+            url.split("/")[-1],
+        )
+        return all_results[:max_records]
 
     async def _fetch_conflict(self, db: AsyncSession, headers: dict) -> int:
         url = f"{BASE_URL}/coordination-context/conflict-event"
@@ -126,10 +141,31 @@ class HDXHAPIIngester(BaseIngester):
 
     async def _fetch_idps(self, db: AsyncSession, headers: dict) -> int:
         url = f"{BASE_URL}/affected-people/idps"
-        rows = await self._paginate(url, headers)
-        count = 0
+        rows = await self._paginate(url, headers, max_records=20000)
 
+        # HDX HAPI returns multiple records per location+date due to
+        # different assessment operations (Overview vs Monthly).  Keep
+        # only the highest reporting_round per (admin2, date) -- the
+        # most recent assessment.
+        best = {}
         for row in rows:
+            ref_start = row.get("reference_period_start")
+            if not ref_start:
+                continue
+            key = (
+                row.get("admin1_code"),
+                row.get("admin2_code"),
+                ref_start,
+            )
+            existing = best.get(key)
+            if not existing or (
+                row.get("reporting_round", 0)
+                > existing.get("reporting_round", 0)
+            ):
+                best[key] = row
+
+        count = 0
+        for row in best.values():
             ref_start = parse_dt(row.get("reference_period_start"))
             if not ref_start:
                 continue
@@ -143,7 +179,9 @@ class HDXHAPIIngester(BaseIngester):
                 displacement_type="idp",
                 population=row.get("population", 0),
                 reference_period_start=ref_start,
-                reference_period_end=parse_dt(row.get("reference_period_end")),
+                reference_period_end=parse_dt(
+                    row.get("reference_period_end")
+                ),
             ))
             count += 1
 
@@ -151,7 +189,9 @@ class HDXHAPIIngester(BaseIngester):
             await db.commit()
         except Exception as e:
             await db.rollback()
-            logger.warning("IDPs batch insert failed: %s", str(e)[:200])
+            logger.warning(
+                "IDPs batch insert failed: %s", str(e)[:200]
+            )
 
         logger.info("HDX HAPI IDPs: %d records", count)
         return count

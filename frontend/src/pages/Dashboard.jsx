@@ -64,22 +64,29 @@ export default function Dashboard() {
         <KPICard
           label="Internally Displaced"
           value={kpis.total_idps}
+          sublabel={kpis.idp_period
+            ? `${kpis.idp_source || 'IOM DTM'} - ${new Date(kpis.idp_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+            : kpis.idp_source || 'Latest figure'}
           color="orange"
         />
         <KPICard
           label="Conflict Events"
           value={kpis.total_conflict_events}
+          sublabel={kpis.conflict_window?.label || 'All time'}
           color="red"
         />
         <KPICard
           label="Fatalities"
           value={kpis.total_fatalities}
+          sublabel={kpis.conflict_window?.label || 'All time'}
           color="red"
         />
         <KPICard
           label="IPC 4-5 Population"
           value={kpis.ipc_emergency_population}
-          sublabel="Emergency + Famine"
+          sublabel={kpis.ipc_period
+            ? `As of ${new Date(kpis.ipc_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+            : 'Emergency + Famine'}
           color="orange"
         />
       </div>

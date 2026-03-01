@@ -14,50 +14,90 @@ router = APIRouter()
 
 @router.get("")
 async def list_regions(db: AsyncSession = Depends(get_db)):
-    # Get unique admin1 regions with aggregated stats
+    # Build region list from ALL data sources, not just conflict.
+    # Many states have displacement/food security data but no
+    # recorded conflict events.
+    regions = {}
+
+    # Seed from all sources that have admin1 codes.
+    # Exclude country-level codes (SUD, SDN) -- only state-level (SD01-SD18).
+    for Model in (ConflictEvent, Displacement, FoodSecurity):
+        result = await db.execute(
+            select(Model.admin1_code, Model.admin1_name).where(
+                Model.admin1_code.isnot(None),
+                Model.admin1_code.like("SD%"),
+            ).distinct()
+        )
+        for r in result.all():
+            if r.admin1_code and r.admin1_code not in regions:
+                regions[r.admin1_code] = {
+                    "code": r.admin1_code,
+                    "name": r.admin1_name,
+                    "conflict_events": 0,
+                    "fatalities": 0,
+                    "idps": 0,
+                    "ipc_worst_phase": 0,
+                    "orgs_count": 0,
+                }
+
+    # Add conflict stats
     conflict_by_region = await db.execute(
         select(
             ConflictEvent.admin1_code,
-            ConflictEvent.admin1_name,
             func.sum(ConflictEvent.events).label("events"),
             func.sum(ConflictEvent.fatalities).label("fatalities"),
-        ).group_by(ConflictEvent.admin1_code, ConflictEvent.admin1_name)
+        ).group_by(ConflictEvent.admin1_code)
     )
-
-    regions = {}
     for r in conflict_by_region.all():
-        if not r.admin1_code:
-            continue
-        regions[r.admin1_code] = {
-            "code": r.admin1_code,
-            "name": r.admin1_name,
-            "conflict_events": r.events or 0,
-            "fatalities": r.fatalities or 0,
-            "idps": 0,
-            "ipc_worst_phase": 0,
-            "orgs_count": 0,
-        }
-
-    # Add IDP data (any source)
-    idp_by_region = await db.execute(
-        select(
-            Displacement.admin1_code,
-            func.sum(Displacement.population).label("pop"),
-        ).where(
-            Displacement.displacement_type == "idp",
-        ).group_by(Displacement.admin1_code)
-    )
-    for r in idp_by_region.all():
         if r.admin1_code in regions:
-            regions[r.admin1_code]["idps"] = r.pop or 0
+            regions[r.admin1_code]["conflict_events"] = r.events or 0
+            regions[r.admin1_code]["fatalities"] = r.fatalities or 0
 
-    # Add IPC worst phase (only numeric phases 1-5)
+    # Add IDP data -- latest reference period only (stock, not flow)
+    # First find the latest IDP period
+    latest_idp_period = await db.execute(
+        select(func.max(Displacement.reference_period_start)).where(
+            Displacement.displacement_type == "idp",
+            # Exclude country-level 'SUD' rows from UNHCR
+            Displacement.admin1_code.notin_(["SUD", "SDN"]),
+        )
+    )
+    latest_idp_date = latest_idp_period.scalar()
+
+    if latest_idp_date:
+        # Sum admin2-level records per admin1 -- exclude aggregate rows
+        # (rows with admin2_name=NULL are state-level aggregates)
+        idp_by_region = await db.execute(
+            select(
+                Displacement.admin1_code,
+                func.sum(Displacement.population).label("pop"),
+            ).where(
+                Displacement.displacement_type == "idp",
+                Displacement.reference_period_start == latest_idp_date,
+                Displacement.admin1_code.isnot(None),
+                Displacement.admin2_name.isnot(None),
+            ).group_by(Displacement.admin1_code)
+        )
+        for r in idp_by_region.all():
+            if r.admin1_code in regions:
+                regions[r.admin1_code]["idps"] = r.pop or 0
+
+    # Add IPC worst phase -- latest period only (stock, not flow)
+    latest_ipc_period = await db.execute(
+        select(func.max(FoodSecurity.reference_period_start)).where(
+            FoodSecurity.ipc_phase.in_(["1", "2", "3", "4", "5"]),
+        )
+    )
+    latest_ipc_date = latest_ipc_period.scalar()
+
     ipc_by_region = await db.execute(
         select(
             FoodSecurity.admin1_code,
             func.max(FoodSecurity.ipc_phase).label("worst"),
         ).where(
             FoodSecurity.ipc_phase.in_(["1", "2", "3", "4", "5"]),
+            FoodSecurity.reference_period_start == latest_ipc_date
+            if latest_ipc_date else True,
         ).group_by(FoodSecurity.admin1_code)
     )
     for r in ipc_by_region.all():
@@ -78,11 +118,18 @@ async def list_regions(db: AsyncSession = Depends(get_db)):
         if r.admin1_code in regions:
             regions[r.admin1_code]["orgs_count"] = r.count or 0
 
-    # Compute severity score (0-100)
+    # Compute severity index (0-100).
+    # Normalized against the max value in each dimension across all
+    # regions, so scores reflect relative severity.  Weights:
+    #   Fatalities 40% | IPC worst phase 30% | IDPs 30%
+    # This is an INDEX for map coloring, not a validated metric.
+    max_fat = max((r["fatalities"] for r in regions.values()), default=1) or 1
+    max_idps = max((r["idps"] for r in regions.values()), default=1) or 1
+
     for code, region in regions.items():
-        conflict_score = min(region["fatalities"] / 500, 1.0) * 40
+        conflict_score = (region["fatalities"] / max_fat) * 40
         ipc_score = (region["ipc_worst_phase"] / 5) * 30
-        idp_score = min(region["idps"] / 1_000_000, 1.0) * 30
+        idp_score = (region["idps"] / max_idps) * 30
         region["severity"] = round(conflict_score + ipc_score + idp_score)
 
     return sorted(regions.values(), key=lambda x: x["severity"], reverse=True)
@@ -107,11 +154,11 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
         for c in conflict_result.scalars().all()
     ]
 
-    # Displacement
+    # Displacement -- all sources, but exclude aggregate rows
     disp_result = await db.execute(
         select(Displacement).where(
             Displacement.admin1_code == admin1_code,
-            Displacement.source == "hdx_hapi",
+            Displacement.admin2_name.isnot(None),
         ).order_by(Displacement.reference_period_start)
     )
     displacements = [
@@ -158,18 +205,58 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
         for o in ops_result.scalars().all()
     ]
 
-    # Get admin1 name from conflict or food security data
+    # Get admin1 name from any source
     name_result = await db.execute(
         select(ConflictEvent.admin1_name).where(
             ConflictEvent.admin1_code == admin1_code,
             ConflictEvent.admin1_name.isnot(None),
         ).limit(1)
     )
-    admin1_name = name_result.scalar() or admin1_code
+    admin1_name = name_result.scalar()
+    if not admin1_name:
+        # Try displacement table
+        name_result2 = await db.execute(
+            select(Displacement.admin1_name).where(
+                Displacement.admin1_code == admin1_code,
+                Displacement.admin1_name.isnot(None),
+            ).limit(1)
+        )
+        admin1_name = name_result2.scalar() or admin1_code
+
+    # Latest IDP figure for this region (stock, not cumulative)
+    latest_idp_q = await db.execute(
+        select(func.sum(Displacement.population)).where(
+            Displacement.admin1_code == admin1_code,
+            Displacement.displacement_type == "idp",
+            Displacement.admin2_name.isnot(None),
+            Displacement.reference_period_start == (
+                select(
+                    func.max(Displacement.reference_period_start)
+                ).where(
+                    Displacement.admin1_code == admin1_code,
+                    Displacement.displacement_type == "idp",
+                    Displacement.admin2_name.isnot(None),
+                ).scalar_subquery()
+            ),
+        )
+    )
+    latest_idps = latest_idp_q.scalar() or 0
+
+    # Latest IPC period for this region
+    latest_ipc_q = await db.execute(
+        select(func.max(FoodSecurity.reference_period_start)).where(
+            FoodSecurity.admin1_code == admin1_code,
+            FoodSecurity.ipc_phase.in_(["1", "2", "3", "4", "5"]),
+        )
+    )
+    latest_ipc_period = latest_ipc_q.scalar()
 
     return {
         "admin1_code": admin1_code,
         "admin1_name": admin1_name,
+        "latest_idps": latest_idps,
+        "latest_ipc_period": latest_ipc_period.isoformat()
+        if latest_ipc_period else None,
         "conflict": conflicts,
         "displacement": displacements,
         "food_security": food_security,

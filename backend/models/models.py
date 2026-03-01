@@ -49,7 +49,8 @@ class Displacement(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "source", "admin1_code", "displacement_type", "reference_period_start",
+            "source", "admin1_code", "admin2_code",
+            "displacement_type", "reference_period_start",
             name="uq_displacement",
         ),
     )
