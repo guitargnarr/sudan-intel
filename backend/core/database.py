@@ -13,8 +13,17 @@ from backend.core.config import settings
 is_sqlite = "sqlite" in settings.DATABASE_URL
 
 
-def _build_pg8000_url(url):
-    """Convert Render's postgres:// URL to pg8000 async driver format."""
+def _build_async_pg_url(url):
+    """Convert Render's postgres:// URL to asyncpg driver format."""
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return url
+
+
+def _build_sync_pg_url(url):
+    """Convert Render's postgres:// URL to pg8000 sync driver format."""
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+pg8000://", 1)
     elif url.startswith("postgres://"):
@@ -32,11 +41,11 @@ if "sqlite" in settings.DATABASE_URL:
     sync_url = db_url.replace("+aiosqlite", "")
     sync_engine = create_engine(sync_url, echo=False)
 else:
-    pg_url = _build_pg8000_url(settings.DATABASE_URL)
+    pg_url = _build_async_pg_url(settings.DATABASE_URL)
     engine = create_async_engine(
         pg_url, echo=False, future=True, pool_size=5, max_overflow=10,
     )
-    sync_pg_url = _build_pg8000_url(settings.DATABASE_URL)
+    sync_pg_url = _build_sync_pg_url(settings.DATABASE_URL)
     sync_engine = create_engine(sync_pg_url, echo=False)
 
 AsyncSessionLocal = async_sessionmaker(
