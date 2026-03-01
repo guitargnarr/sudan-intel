@@ -80,56 +80,83 @@ class UNHCRIngester(BaseIngester):
     async def _fetch_refugees_abroad(
         self, db: AsyncSession,
     ) -> int:
-        """Fetch refugees FROM Sudan by country of asylum."""
-        params = {
-            "limit": 500, "yearFrom": 2020,
-            "coo": "SUD",
+        """Fetch refugees FROM Sudan by country of asylum.
+
+        UNHCR API requires per-country queries to get
+        breakdown by destination.
+        """
+        # Top asylum countries for Sudanese refugees
+        asylum_countries = {
+            "TCD": "Chad",
+            "EGY": "Egypt",
+            "SSD": "South Sudan",
+            "ETH": "Ethiopia",
+            "CAF": "Central African Republic",
+            "ISR": "Israel",
+            "KEN": "Kenya",
+            "UGA": "Uganda",
+            "LBY": "Libya",
+            "SAU": "Saudi Arabia",
         }
-        url = f"{UNHCR_API}/population/"
-        resp = await self.client.get(url, params=params)
-        resp.raise_for_status()
-        items = resp.json().get("items", [])
         count = 0
+        url = f"{UNHCR_API}/population/"
 
-        for item in items:
-            year = item.get("year")
-            coa_code = item.get("coa_iso", "")
-            coa_name = item.get("coa_name", "")
-            if not year or not coa_code:
-                continue
-
-            ref_start = datetime(year, 1, 1)
-            ref_end = datetime(year, 12, 31)
-
-            existing = await db.execute(
-                select(Displacement).where(
-                    Displacement.source == "unhcr",
-                    Displacement.admin1_code == coa_code,
-                    Displacement.displacement_type
-                    == "refugee",
-                    Displacement.reference_period_start
-                    == ref_start,
+        for coa_code, coa_name in asylum_countries.items():
+            params = {
+                "limit": 20, "yearFrom": 2020,
+                "coo": "SUD", "coa": coa_code,
+            }
+            try:
+                resp = await self.client.get(
+                    url, params=params
                 )
-            )
-            if existing.scalar_one_or_none():
+                resp.raise_for_status()
+            except Exception as e:
+                logger.warning(
+                    "UNHCR %s fetch failed: %s",
+                    coa_code, e,
+                )
                 continue
 
-            pop = self._parse_pop(
-                item.get("refugees", 0)
-            )
-            if pop == 0:
-                continue
+            items = resp.json().get("items", [])
+            for item in items:
+                year = item.get("year")
+                if not year:
+                    continue
 
-            db.add(Displacement(
-                source="unhcr",
-                admin1_code=coa_code,
-                admin1_name=coa_name,
-                displacement_type="refugee",
-                population=pop,
-                reference_period_start=ref_start,
-                reference_period_end=ref_end,
-            ))
-            count += 1
+                ref_start = datetime(year, 1, 1)
+                ref_end = datetime(year, 12, 31)
+
+                existing = await db.execute(
+                    select(Displacement).where(
+                        Displacement.source == "unhcr",
+                        Displacement.admin1_code
+                        == coa_code,
+                        Displacement.displacement_type
+                        == "refugee",
+                        Displacement.reference_period_start
+                        == ref_start,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    continue
+
+                pop = self._parse_pop(
+                    item.get("refugees", 0)
+                )
+                if pop == 0:
+                    continue
+
+                db.add(Displacement(
+                    source="unhcr",
+                    admin1_code=coa_code,
+                    admin1_name=coa_name,
+                    displacement_type="refugee",
+                    population=pop,
+                    reference_period_start=ref_start,
+                    reference_period_end=ref_end,
+                ))
+                count += 1
 
         await db.commit()
         logger.info("UNHCR refugees: %d records", count)

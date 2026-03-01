@@ -288,7 +288,9 @@ async def _get_refugees_abroad(db: AsyncSession):
         ).where(
             Displacement.source == "unhcr",
             Displacement.displacement_type == "refugee",
-            Displacement.admin1_code != "SUD",
+            Displacement.admin1_code.notin_(
+                ["SUD", "-", ""]
+            ),
         )
     )
     latest = latest_q.scalar()
@@ -304,7 +306,9 @@ async def _get_refugees_abroad(db: AsyncSession):
             Displacement.source == "unhcr",
             Displacement.displacement_type == "refugee",
             Displacement.reference_period_start == latest,
-            Displacement.admin1_code != "SUD",
+            Displacement.admin1_code.notin_(
+                ["SUD", "-", ""]
+            ),
         ).order_by(Displacement.population.desc()).limit(10)
     )
     return [

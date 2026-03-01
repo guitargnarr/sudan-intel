@@ -30,16 +30,22 @@ class ReliefWebIngester(BaseIngester):
             return None
 
     async def fetch(self, db: AsyncSession) -> int:
-        params = {
-            "appname": "sudan-intel",
-            "filter[field]": "country",
-            "filter[value]": "Sudan",
-            "sort[]": "date:desc",
-            "limit": 30,
-            "fields[include][]": "title,url_alias,source,date,origin",
-        }
+        params = [
+            ("appname", "sudan-intel"),
+            ("filter[field]", "country"),
+            ("filter[value]", "Sudan"),
+            ("sort[]", "date:desc"),
+            ("limit", "30"),
+            ("fields[include][]", "title"),
+            ("fields[include][]", "url_alias"),
+            ("fields[include][]", "source"),
+            ("fields[include][]", "date"),
+            ("fields[include][]", "origin"),
+        ]
 
-        resp = await self.client.get(RELIEFWEB_API, params=params)
+        resp = await self.client.get(
+            RELIEFWEB_API, params=params
+        )
         resp.raise_for_status()
         data = resp.json()
         items = data.get("data", [])
