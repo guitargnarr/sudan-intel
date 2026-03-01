@@ -5,6 +5,8 @@ all time periods.  Displacement and IPC data are stock figures (point-
 in-time counts), not flows.  Summing them across periods is wrong.
 """
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -169,13 +171,17 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         {
             "source": s.source_name,
             "last_success": s.last_success.isoformat() if s.last_success else None,
+            "last_failure": s.last_failure.isoformat() if s.last_failure else None,
+            "last_error": s.last_error,
             "is_healthy": s.is_healthy,
             "records": s.total_records,
+            "records_last_fetch": s.records_last_fetch,
         }
         for s in sources_result.scalars().all()
     ]
 
     return {
+        "server_time": datetime.utcnow().isoformat(),
         "kpis": {
             "total_idps": total_idps,
             "total_conflict_events": total_conflict_events,
