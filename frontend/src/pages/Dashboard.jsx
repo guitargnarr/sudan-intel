@@ -162,8 +162,9 @@ export default function Dashboard() {
         <KPICard
           label="Internally Displaced"
           value={kpis.total_idps}
+          delta={kpis.idp_change}
           sublabel={kpis.idp_period
-            ? `${kpis.idp_source || 'IOM DTM'} - ${new Date(kpis.idp_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+            ? `${kpis.idp_source || 'IOM DTM'} - ${new Date(kpis.idp_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}${kpis.idp_change_pct != null ? ` (${kpis.idp_change_pct > 0 ? '+' : ''}${kpis.idp_change_pct}%)` : ''}`
             : kpis.idp_source || 'Latest figure'}
           color="orange"
         />
@@ -201,6 +202,55 @@ export default function Dashboard() {
 
       {/* Conflict Timeline */}
       <ConflictTimeline data={dashboard?.conflict_timeline} />
+
+      {/* Food Prices + Refugees Abroad */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Food Prices */}
+        {dashboard?.food_prices?.length > 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">Commodity Prices</h3>
+            <div className="space-y-2">
+              {dashboard.food_prices.map((p, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-400 truncate mr-2">{p.commodity}</span>
+                  <span className="text-white font-medium whitespace-nowrap">
+                    {p.price.toLocaleString()} {p.currency}/{p.unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Refugees Abroad */}
+        {dashboard?.refugees_abroad?.length > 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">
+              Sudanese Refugees by Country of Asylum
+            </h3>
+            <div className="space-y-2">
+              {dashboard.refugees_abroad.map((r, i) => {
+                const maxPop = dashboard.refugees_abroad[0]?.refugees || 1;
+                const pct = (r.refugees / maxPop) * 100;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-sm mb-0.5">
+                      <span className="text-gray-400">{r.country}</span>
+                      <span className="text-white font-medium">{r.refugees.toLocaleString()}</span>
+                    </div>
+                    <div className="w-full bg-gray-800 rounded-full h-1.5">
+                      <div
+                        className="bg-brand-orange h-1.5 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* AI Briefing */}
       <AIBriefing brief={dashboard?.latest_brief} />

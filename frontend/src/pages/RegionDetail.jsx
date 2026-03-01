@@ -52,12 +52,14 @@ export default function RegionDetail() {
   const displacements = region?.displacement || [];
   const foodSecurity = region?.food_security || [];
   const orgs = region?.operational_presence || [];
+  const foodPrices = region?.food_prices || [];
 
   const totalEvents = conflicts.reduce((s, c) => s + (c.events || 0), 0);
   const totalFatalities = conflicts.reduce((s, c) => s + (c.fatalities || 0), 0);
 
   // IDPs: use latest period only (stock figure, not cumulative)
   const totalIDPs = region?.latest_idps ?? displacements.reduce((s, d) => s + (d.population || 0), 0);
+  const idpChange = region?.idp_change;
   const regionName = region?.admin1_name || conflicts[0]?.admin1 || displacements[0]?.admin1 || code;
 
   // IPC distribution -- latest period only
@@ -85,7 +87,7 @@ export default function RegionDetail() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard label="Conflict Events" value={totalEvents} color="red" />
         <KPICard label="Fatalities" value={totalFatalities} color="red" />
-        <KPICard label="Displaced" value={totalIDPs} color="orange" />
+        <KPICard label="Displaced" value={totalIDPs} delta={idpChange} color="orange" />
         <KPICard label="Organizations" value={new Set(orgs.map(o => o.acronym)).size} color="teal" />
       </div>
 
@@ -115,6 +117,23 @@ export default function RegionDetail() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Food Prices */}
+      {foodPrices.length > 0 && (
+        <div className="bg-gray-900 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Commodity Prices</h3>
+          <div className="grid grid-cols-2 gap-2">
+            {foodPrices.map((p, i) => (
+              <div key={i} className="flex items-center justify-between text-sm bg-gray-800/50 rounded px-3 py-2">
+                <span className="text-gray-400 truncate mr-2">{p.commodity}</span>
+                <span className="text-white font-medium whitespace-nowrap">
+                  {p.price.toLocaleString()} {p.currency}/{p.unit}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

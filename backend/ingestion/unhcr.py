@@ -21,27 +21,21 @@ class UNHCRIngester(BaseIngester):
     async def fetch(self, db: AsyncSession) -> int:
         count = 0
         # UNHCR uses 'SUD' for Sudan (not SDN)
-        # Refugees FROM Sudan (country of origin)
-        count += await self._fetch_population(db, coo="SUD", disp_type="refugee")
         # IDPs IN Sudan (country of asylum = Sudan)
-        count += await self._fetch_population(db, coa="SUD", disp_type="idp")
+        count += await self._fetch_idps(db)
+        # Refugees FROM Sudan by country of asylum
+        count += await self._fetch_refugees_abroad(db)
         return count
 
-    async def _fetch_population(
-        self, db: AsyncSession, disp_type: str,
-        coo: str = None, coa: str = None,
-    ) -> int:
-        params = {"limit": 100, "yearFrom": 2010}
-        if coo:
-            params["coo"] = coo
-        if coa:
-            params["coa"] = coa
-
+    async def _fetch_idps(self, db: AsyncSession) -> int:
+        params = {
+            "limit": 100, "yearFrom": 2010,
+            "coa": "SUD",
+        }
         url = f"{UNHCR_API}/population/"
         resp = await self.client.get(url, params=params)
         resp.raise_for_status()
-        data = resp.json()
-        items = data.get("items", [])
+        items = resp.json().get("items", [])
         count = 0
 
         for item in items:
@@ -55,31 +49,24 @@ class UNHCRIngester(BaseIngester):
             existing = await db.execute(
                 select(Displacement).where(
                     Displacement.source == "unhcr",
-                    Displacement.admin1_code == (coa or coo),
-                    Displacement.displacement_type == disp_type,
-                    Displacement.reference_period_start == ref_start,
+                    Displacement.admin1_code == "SUD",
+                    Displacement.displacement_type == "idp",
+                    Displacement.reference_period_start
+                    == ref_start,
                 )
             )
             if existing.scalar_one_or_none():
                 continue
 
-            # Parse population -- UNHCR returns some fields as strings
-            if disp_type == "refugee":
-                pop = item.get("refugees", 0)
-            else:
-                pop = item.get("idps", 0)
-
-            if isinstance(pop, str):
-                pop = int(pop) if pop.isdigit() else 0
-
+            pop = self._parse_pop(item.get("idps", 0))
             if pop == 0:
                 continue
 
             db.add(Displacement(
                 source="unhcr",
-                admin1_code=coa or coo,
-                admin1_name=item.get("coo_name", "Sudan"),
-                displacement_type=disp_type,
+                admin1_code="SUD",
+                admin1_name="Sudan",
+                displacement_type="idp",
                 population=pop,
                 reference_period_start=ref_start,
                 reference_period_end=ref_end,
@@ -87,5 +74,69 @@ class UNHCRIngester(BaseIngester):
             count += 1
 
         await db.commit()
-        logger.info("UNHCR %s: %d records", disp_type, count)
+        logger.info("UNHCR IDPs: %d records", count)
         return count
+
+    async def _fetch_refugees_abroad(
+        self, db: AsyncSession,
+    ) -> int:
+        """Fetch refugees FROM Sudan by country of asylum."""
+        params = {
+            "limit": 500, "yearFrom": 2020,
+            "coo": "SUD",
+        }
+        url = f"{UNHCR_API}/population/"
+        resp = await self.client.get(url, params=params)
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        count = 0
+
+        for item in items:
+            year = item.get("year")
+            coa_code = item.get("coa_iso", "")
+            coa_name = item.get("coa_name", "")
+            if not year or not coa_code:
+                continue
+
+            ref_start = datetime(year, 1, 1)
+            ref_end = datetime(year, 12, 31)
+
+            existing = await db.execute(
+                select(Displacement).where(
+                    Displacement.source == "unhcr",
+                    Displacement.admin1_code == coa_code,
+                    Displacement.displacement_type
+                    == "refugee",
+                    Displacement.reference_period_start
+                    == ref_start,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+
+            pop = self._parse_pop(
+                item.get("refugees", 0)
+            )
+            if pop == 0:
+                continue
+
+            db.add(Displacement(
+                source="unhcr",
+                admin1_code=coa_code,
+                admin1_name=coa_name,
+                displacement_type="refugee",
+                population=pop,
+                reference_period_start=ref_start,
+                reference_period_end=ref_end,
+            ))
+            count += 1
+
+        await db.commit()
+        logger.info("UNHCR refugees: %d records", count)
+        return count
+
+    @staticmethod
+    def _parse_pop(val):
+        if isinstance(val, str):
+            return int(val) if val.isdigit() else 0
+        return val or 0

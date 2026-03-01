@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.database import get_db
 from backend.models.models import (
-    ConflictEvent, Displacement, FoodSecurity, OperationalPresence,
+    ConflictEvent, Displacement, FoodSecurity,
+    FoodPrice, OperationalPresence,
 )
 
 router = APIRouter()
@@ -111,7 +112,11 @@ async def list_regions(db: AsyncSession = Depends(get_db)):
     org_by_region = await db.execute(
         select(
             OperationalPresence.admin1_code,
-            func.count(func.distinct(OperationalPresence.org_acronym)).label("count"),
+            func.count(
+                func.distinct(
+                    OperationalPresence.org_acronym
+                )
+            ).label("count"),
         ).group_by(OperationalPresence.admin1_code)
     )
     for r in org_by_region.all():
@@ -149,7 +154,10 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
             "events": c.events,
             "fatalities": c.fatalities,
             "admin2": c.admin2_name,
-            "date": c.reference_period_start.isoformat() if c.reference_period_start else None,
+            "date": (
+                c.reference_period_start.isoformat()
+                if c.reference_period_start else None
+            ),
         }
         for c in conflict_result.scalars().all()
     ]
@@ -166,7 +174,10 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
             "type": d.displacement_type,
             "population": d.population,
             "admin2": d.admin2_name,
-            "date": d.reference_period_start.isoformat() if d.reference_period_start else None,
+            "date": (
+                d.reference_period_start.isoformat()
+                if d.reference_period_start else None
+            ),
         }
         for d in disp_result.scalars().all()
     ]
@@ -183,7 +194,10 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
             "type": f.ipc_type,
             "population": f.population_in_phase,
             "admin2": f.admin2_name,
-            "date": f.reference_period_start.isoformat() if f.reference_period_start else None,
+            "date": (
+                f.reference_period_start.isoformat()
+                if f.reference_period_start else None
+            ),
         }
         for f in fs_result.scalars().all()
     ]
@@ -242,23 +256,95 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
     )
     latest_idps = latest_idp_q.scalar() or 0
 
+    # IDP change: compare to previous period
+    idp_change = None
+    prev_idp_period_q = await db.execute(
+        select(
+            func.max(Displacement.reference_period_start)
+        ).where(
+            Displacement.admin1_code == admin1_code,
+            Displacement.displacement_type == "idp",
+            Displacement.admin2_name.isnot(None),
+            Displacement.reference_period_start < (
+                select(
+                    func.max(
+                        Displacement.reference_period_start
+                    )
+                ).where(
+                    Displacement.admin1_code == admin1_code,
+                    Displacement.displacement_type == "idp",
+                    Displacement.admin2_name.isnot(None),
+                ).scalar_subquery()
+            ),
+        )
+    )
+    prev_idp_period = prev_idp_period_q.scalar()
+    if prev_idp_period:
+        prev_idp_q = await db.execute(
+            select(
+                func.sum(Displacement.population)
+            ).where(
+                Displacement.admin1_code == admin1_code,
+                Displacement.displacement_type == "idp",
+                Displacement.admin2_name.isnot(None),
+                Displacement.reference_period_start
+                == prev_idp_period,
+            )
+        )
+        prev_idps = prev_idp_q.scalar() or 0
+        if prev_idps > 0:
+            idp_change = latest_idps - prev_idps
+
     # Latest IPC period for this region
     latest_ipc_q = await db.execute(
-        select(func.max(FoodSecurity.reference_period_start)).where(
+        select(
+            func.max(FoodSecurity.reference_period_start)
+        ).where(
             FoodSecurity.admin1_code == admin1_code,
-            FoodSecurity.ipc_phase.in_(["1", "2", "3", "4", "5"]),
+            FoodSecurity.ipc_phase.in_(
+                ["1", "2", "3", "4", "5"]
+            ),
         )
     )
     latest_ipc_period = latest_ipc_q.scalar()
+
+    # Food prices for this region
+    price_result = await db.execute(
+        select(
+            FoodPrice.commodity_name,
+            func.avg(FoodPrice.price).label("avg_price"),
+            FoodPrice.currency_code,
+            FoodPrice.unit,
+        ).where(
+            FoodPrice.admin1_code == admin1_code,
+        ).group_by(
+            FoodPrice.commodity_name,
+            FoodPrice.currency_code,
+            FoodPrice.unit,
+        ).order_by(FoodPrice.commodity_name).limit(10)
+    )
+    food_prices = [
+        {
+            "commodity": r.commodity_name,
+            "price": round(r.avg_price, 1),
+            "currency": r.currency_code,
+            "unit": r.unit,
+        }
+        for r in price_result.all()
+    ]
 
     return {
         "admin1_code": admin1_code,
         "admin1_name": admin1_name,
         "latest_idps": latest_idps,
-        "latest_ipc_period": latest_ipc_period.isoformat()
-        if latest_ipc_period else None,
+        "idp_change": idp_change,
+        "latest_ipc_period": (
+            latest_ipc_period.isoformat()
+            if latest_ipc_period else None
+        ),
         "conflict": conflicts,
         "displacement": displacements,
         "food_security": food_security,
+        "food_prices": food_prices,
         "operational_presence": orgs,
     }

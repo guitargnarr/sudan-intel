@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.database import get_db
 from backend.models.models import (
-    ConflictEvent, Displacement, FoodSecurity, OperationalPresence,
-    SynthesisBrief, DataSourceStatus,
+    ConflictEvent, Displacement, FoodSecurity, FoodPrice,
+    OperationalPresence, SynthesisBrief, DataSourceStatus,
 )
 
 router = APIRouter()
@@ -124,6 +124,68 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     else:
         ipc_emergency_pop = 0
 
+    # IDP change: compare latest period to previous period
+    idp_change = None
+    idp_change_pct = None
+    if idp_period:
+        prev_period_q = await db.execute(
+            select(
+                func.max(Displacement.reference_period_start)
+            ).where(
+                Displacement.displacement_type == "idp",
+                Displacement.source == "hdx_hapi",
+                Displacement.reference_period_start < idp_period,
+            )
+        )
+        prev_period = prev_period_q.scalar()
+        if prev_period:
+            prev_idp_q = await db.execute(
+                select(
+                    func.sum(Displacement.population)
+                ).where(
+                    Displacement.displacement_type == "idp",
+                    Displacement.source == "hdx_hapi",
+                    Displacement.reference_period_start == prev_period,
+                    Displacement.admin2_name.isnot(None),
+                )
+            )
+            prev_idps = prev_idp_q.scalar() or 0
+            if prev_idps > 0:
+                idp_change = total_idps - prev_idps
+                idp_change_pct = round(
+                    (idp_change / prev_idps) * 100, 1
+                )
+
+    # Food prices: top commodities by latest period
+    latest_price_q = await db.execute(
+        select(func.max(FoodPrice.reference_period_start))
+    )
+    latest_price_date = latest_price_q.scalar()
+
+    food_prices = []
+    if latest_price_date:
+        price_q = await db.execute(
+            select(
+                FoodPrice.commodity_name,
+                func.avg(FoodPrice.price).label("avg_price"),
+                FoodPrice.currency_code,
+                FoodPrice.unit,
+            ).where(
+                FoodPrice.reference_period_start == latest_price_date,
+            ).group_by(
+                FoodPrice.commodity_name,
+                FoodPrice.currency_code,
+                FoodPrice.unit,
+            ).order_by(FoodPrice.commodity_name).limit(10)
+        )
+        for r in price_q.all():
+            food_prices.append({
+                "commodity": r.commodity_name,
+                "price": round(r.avg_price, 1),
+                "currency": r.currency_code,
+                "unit": r.unit,
+            })
+
     # KPI: Active organizations
     org_result = await db.execute(
         select(func.count(func.distinct(OperationalPresence.org_acronym)))
@@ -198,6 +260,8 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
             "ipc_emergency_population": ipc_emergency_pop,
             "active_organizations": active_orgs,
             "idp_source": idp_source,
+            "idp_change": idp_change,
+            "idp_change_pct": idp_change_pct,
             "idp_period": idp_period.isoformat()
             if idp_period else None,
             "conflict_window": {
@@ -211,4 +275,43 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         "conflict_timeline": timeline,
         "latest_brief": latest_brief,
         "data_freshness": freshness,
+        "food_prices": food_prices,
+        "refugees_abroad": await _get_refugees_abroad(db),
     }
+
+
+async def _get_refugees_abroad(db: AsyncSession):
+    """Get latest refugee counts by country of asylum."""
+    latest_q = await db.execute(
+        select(
+            func.max(Displacement.reference_period_start)
+        ).where(
+            Displacement.source == "unhcr",
+            Displacement.displacement_type == "refugee",
+            Displacement.admin1_code != "SUD",
+        )
+    )
+    latest = latest_q.scalar()
+    if not latest:
+        return []
+
+    result = await db.execute(
+        select(
+            Displacement.admin1_code,
+            Displacement.admin1_name,
+            Displacement.population,
+        ).where(
+            Displacement.source == "unhcr",
+            Displacement.displacement_type == "refugee",
+            Displacement.reference_period_start == latest,
+            Displacement.admin1_code != "SUD",
+        ).order_by(Displacement.population.desc()).limit(10)
+    )
+    return [
+        {
+            "country_code": r.admin1_code,
+            "country": r.admin1_name,
+            "refugees": r.population,
+        }
+        for r in result.all()
+    ]
