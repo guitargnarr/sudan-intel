@@ -51,6 +51,16 @@ class IngestScheduler:
             )
 
             self.scheduler.add_job(
+                self._run_reliefweb,
+                "interval",
+                hours=1,
+                id="reliefweb",
+                name="ReliefWeb Reports Ingestion",
+                replace_existing=True,
+                next_run_time=now,
+            )
+
+            self.scheduler.add_job(
                 self._run_synthesis,
                 "interval",
                 hours=settings.SYNTHESIS_INTERVAL_HOURS,
@@ -61,7 +71,10 @@ class IngestScheduler:
             )
 
             self.scheduler.start()
-            logger.info("Scheduler started with %d jobs", len(self.scheduler.get_jobs()))
+            job_count = len(self.scheduler.get_jobs())
+            logger.info(
+                "Scheduler started with %d jobs", job_count
+            )
 
         except Exception as e:
             logger.error("Failed to start scheduler: %s", e)
@@ -79,7 +92,10 @@ class IngestScheduler:
             jobs.append({
                 "id": job.id,
                 "name": job.name,
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                "next_run": (
+                    job.next_run_time.isoformat()
+                    if job.next_run_time else None
+                ),
             })
         return {"running": True, "jobs": jobs}
 
@@ -122,6 +138,19 @@ class IngestScheduler:
         except Exception as e:
             logger.error("UNHCR ingestion failed: %s", e)
 
+    async def _run_reliefweb(self):
+        logger.info("Running ReliefWeb ingestion...")
+        try:
+            from backend.core.database import AsyncSessionLocal
+            from backend.ingestion.reliefweb import ReliefWebIngester
+
+            async with AsyncSessionLocal() as db:
+                ingester = ReliefWebIngester()
+                result = await ingester.safe_fetch(db)
+                logger.info("ReliefWeb: %s", result)
+        except Exception as e:
+            logger.error("ReliefWeb ingestion failed: %s", e)
+
     async def _run_synthesis(self):
         logger.info("Running AI synthesis...")
         try:
@@ -131,7 +160,8 @@ class IngestScheduler:
             async with AsyncSessionLocal() as db:
                 generator = BriefingGenerator()
                 result = await generator.generate_national_brief(db)
-                logger.info("Synthesis complete: %d chars", len(result) if result else 0)
+                chars = len(result) if result else 0
+                logger.info("Synthesis complete: %d chars", chars)
         except Exception as e:
             logger.error("Synthesis failed: %s", e)
 

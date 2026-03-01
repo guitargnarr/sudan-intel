@@ -1,4 +1,4 @@
-"""GDELT news monitoring ingester."""
+"""GDELT news monitoring ingester -- filtered for Sudan-relevant content."""
 
 import logging
 from datetime import datetime
@@ -12,6 +12,44 @@ from backend.models.models import NewsArticle
 logger = logging.getLogger(__name__)
 
 GDELT_DOC_API = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+# Trusted domains for Sudan humanitarian coverage
+TRUSTED_DOMAINS = {
+    "reliefweb.int",
+    "dabangasudan.org",
+    "sudantribune.com",
+    "unocha.org",
+    "unhcr.org",
+    "unicef.org",
+    "msf.org",
+    "icrc.org",
+    "aljazeera.com",
+    "reuters.com",
+    "bbc.com",
+    "bbc.co.uk",
+    "theguardian.com",
+    "apnews.com",
+    "middleeasteye.net",
+    "theafricareport.com",
+    "africanews.com",
+    "france24.com",
+}
+
+# Reject articles from domains that frequently produce false positives
+BLOCKED_DOMAINS = {
+    "gulftoday.ae",
+    "siasat.com",
+    "timesnownews.com",
+}
+
+# Title must contain at least one of these to be relevant
+RELEVANCE_KEYWORDS = {
+    "sudan", "khartoum", "darfur", "kordofan", "omdurman",
+    "rsf", "rapid support", "janjaweed", "hemeti", "burhan",
+    "idp", "displaced", "refugee", "humanitarian",
+    "ceasefire", "peace talks", "famine", "cholera",
+    "سودان", "خرطوم", "دارفور",
+}
 
 
 class GDELTIngester(BaseIngester):
@@ -27,9 +65,31 @@ class GDELTIngester(BaseIngester):
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _is_relevant(article):
+        """Check if article is actually about Sudan, not just mentioning it."""
+        domain = article.get("domain", "").lower()
+
+        # Block known false-positive domains
+        if domain in BLOCKED_DOMAINS:
+            return False
+
+        # Trusted domains always pass
+        if domain in TRUSTED_DOMAINS:
+            return True
+
+        # For other domains, title must contain a Sudan-specific keyword
+        title = (article.get("title") or "").lower()
+        return any(kw in title for kw in RELEVANCE_KEYWORDS)
+
     async def fetch(self, db: AsyncSession) -> int:
         params = {
-            "query": "(Sudan OR Khartoum OR Darfur) (crisis OR conflict OR humanitarian OR war)",
+            "query": (
+                "(Sudan OR Darfur OR Khartoum)"
+                " (humanitarian OR conflict OR war"
+                " OR displaced OR famine OR ceasefire)"
+                " sourcelang:english"
+            ),
             "mode": "artlist",
             "maxrecords": "75",
             "format": "json",
@@ -45,10 +105,15 @@ class GDELTIngester(BaseIngester):
         data = resp.json()
         articles = data.get("articles", [])
         count = 0
+        filtered = 0
 
         for article in articles:
             url = article.get("url", "")
             if not url:
+                continue
+
+            if not self._is_relevant(article):
+                filtered += 1
                 continue
 
             existing = await db.execute(
@@ -69,5 +134,8 @@ class GDELTIngester(BaseIngester):
             count += 1
 
         await db.commit()
-        logger.info("GDELT: %d new articles", count)
+        logger.info(
+            "GDELT: %d relevant articles (%d filtered)",
+            count, filtered,
+        )
         return count

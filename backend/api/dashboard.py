@@ -145,7 +145,10 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     timeline = [
         {
             "region": r.admin1_name,
-            "date": r.reference_period_start.isoformat() if r.reference_period_start else None,
+            "date": (
+                r.reference_period_start.isoformat()
+                if r.reference_period_start else None
+            ),
             "events": r.events,
             "fatalities": r.fatalities,
         }
@@ -170,8 +173,14 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     freshness = [
         {
             "source": s.source_name,
-            "last_success": s.last_success.isoformat() if s.last_success else None,
-            "last_failure": s.last_failure.isoformat() if s.last_failure else None,
+            "last_success": (
+                s.last_success.isoformat()
+                if s.last_success else None
+            ),
+            "last_failure": (
+                s.last_failure.isoformat()
+                if s.last_failure else None
+            ),
             "last_error": s.last_error,
             "is_healthy": s.is_healthy,
             "records": s.total_records,

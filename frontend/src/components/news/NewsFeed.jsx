@@ -21,7 +21,10 @@ export default function NewsFeed({ articles }) {
               <ExternalLink className="w-3 h-3 text-gray-500 mt-1 flex-shrink-0" />
               <div>
                 <div className="text-sm text-gray-200 line-clamp-2">{a.title}</div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
+                  {a.source === 'reliefweb' && (
+                    <span className="text-[10px] px-1 py-0.5 rounded bg-brand-teal/20 text-brand-teal font-medium">RW</span>
+                  )}
                   {a.domain} {a.published_at ? `| ${a.published_at.slice(0, 10)}` : ''}
                 </div>
               </div>

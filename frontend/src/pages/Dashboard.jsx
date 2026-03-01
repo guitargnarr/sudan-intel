@@ -5,12 +5,13 @@ import ConflictTimeline from '../components/charts/ConflictTimeline';
 import SudanMap from '../components/maps/SudanMap';
 import NewsFeed from '../components/news/NewsFeed';
 import AIBriefing from '../components/synthesis/AIBriefing';
-import { Loader2, CheckCircle, AlertCircle, Clock, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Clock, RefreshCw, ChevronDown, Info } from 'lucide-react';
 
 const SOURCE_LABELS = {
   hdx_hapi: 'HDX HAPI',
   gdelt: 'GDELT News',
   unhcr: 'UNHCR',
+  reliefweb: 'ReliefWeb',
 };
 
 function timeAgo(iso) {
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [fetchedAt, setFetchedAt] = useState(null);
+  const [showMethodology, setShowMethodology] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -203,6 +205,43 @@ export default function Dashboard() {
       {/* AI Briefing */}
       <AIBriefing brief={dashboard?.latest_brief} />
 
+      {/* Data Methodology */}
+      <div className="bg-gray-900 border border-gray-800 rounded-lg">
+        <button
+          onClick={() => setShowMethodology(!showMethodology)}
+          className="w-full px-4 py-3 flex items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-2">
+            <Info className="w-4 h-4 text-gray-500" />
+            <span className="text-sm text-gray-400">Data Sources & Methodology</span>
+          </div>
+          <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showMethodology ? 'rotate-180' : ''}`} />
+        </button>
+        {showMethodology && (
+          <div className="px-4 pb-4 text-xs text-gray-500 space-y-3 border-t border-gray-800 pt-3">
+            <div>
+              <span className="text-gray-400 font-medium">IDP figures (IOM DTM via HDX HAPI)</span>
+              <p className="mt-0.5">Internally displaced person counts are stock figures representing the total displaced population at a point in time. Sub-national data is aggregated from admin2-level assessments. Figures may differ from other published totals due to assessment timing and methodology differences.</p>
+            </div>
+            <div>
+              <span className="text-gray-400 font-medium">Conflict data (ACLED via HDX HAPI)</span>
+              <p className="mt-0.5">Conflict events and fatalities are sourced from ACLED's coded event data. There is typically a 1-2 week reporting lag. Events in areas with limited access may be undercounted.</p>
+            </div>
+            <div>
+              <span className="text-gray-400 font-medium">Food security (IPC via HDX HAPI)</span>
+              <p className="mt-0.5">IPC phase classifications represent the most recent assessment period. Some areas of Sudan cannot be assessed due to access constraints, meaning Phase 4-5 population figures are likely undercounts of the true emergency population.</p>
+            </div>
+            <div>
+              <span className="text-gray-400 font-medium">Displacement (UNHCR)</span>
+              <p className="mt-0.5">UNHCR figures are national-level annual snapshots of registered refugee and IDP populations. They do not capture unregistered displacement or sub-national distribution.</p>
+            </div>
+            <div>
+              <span className="text-gray-400 font-medium">News (GDELT + ReliefWeb)</span>
+              <p className="mt-0.5">News articles are filtered for Sudan relevance but may include tangential coverage. ReliefWeb reports (marked with RW badge) are verified humanitarian publications. GDELT articles are automated media monitoring.</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
