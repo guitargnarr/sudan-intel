@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # Server
     PORT: int = 8900
-    CORS_ORIGINS: str = "http://localhost:5199,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5199,http://localhost:3000,http://localhost:5203,https://sudan-intel.vercel.app"
 
     @property
     def cors_origins_list(self) -> List[str]:

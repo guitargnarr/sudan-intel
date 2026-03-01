@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: sudan-intel-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sudan-intel-db
+          property: connectionString
+      - key: HDX_APP_IDENTIFIER
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://sudan-intel.vercel.app,http://localhost:5203
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+databases:
+  - name: sudan-intel-db
+    plan: free
+    databaseName: sudan_intel
