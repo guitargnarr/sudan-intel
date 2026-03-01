@@ -8,7 +8,10 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import dashboard, regions, conflict, displacement, food_security, news, synthesis, sources
+from backend.api import (
+    dashboard, regions, conflict, displacement,
+    food_security, news, synthesis, sources,
+)
 from backend.core.config import settings
 from backend.core.database import Base, engine
 
@@ -65,20 +68,51 @@ async def health_check():
 async def root():
     return {
         "name": "Sudan Intel",
-        "description": "AI-assisted humanitarian intelligence for the Sudan crisis",
+        "description": (
+            "AI-assisted humanitarian intelligence"
+            " for the Sudan crisis"
+        ),
         "version": settings.VERSION,
-        "data_sources": ["HDX HAPI", "GDELT", "UNHCR"],
+        "data_sources": [
+            "HDX HAPI", "GDELT", "UNHCR",
+        ],
     }
 
 
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
-app.include_router(regions.router, prefix="/api/regions", tags=["regions"])
-app.include_router(conflict.router, prefix="/api/conflict", tags=["conflict"])
-app.include_router(displacement.router, prefix="/api/displacement", tags=["displacement"])
-app.include_router(food_security.router, prefix="/api/food-security", tags=["food-security"])
-app.include_router(news.router, prefix="/api/news", tags=["news"])
-app.include_router(synthesis.router, prefix="/api/synthesis", tags=["synthesis"])
-app.include_router(sources.router, prefix="/api/sources", tags=["sources"])
+app.include_router(
+    dashboard.router,
+    prefix="/api/dashboard", tags=["dashboard"],
+)
+app.include_router(
+    regions.router,
+    prefix="/api/regions", tags=["regions"],
+)
+app.include_router(
+    conflict.router,
+    prefix="/api/conflict", tags=["conflict"],
+)
+app.include_router(
+    displacement.router,
+    prefix="/api/displacement",
+    tags=["displacement"],
+)
+app.include_router(
+    food_security.router,
+    prefix="/api/food-security",
+    tags=["food-security"],
+)
+app.include_router(
+    news.router,
+    prefix="/api/news", tags=["news"],
+)
+app.include_router(
+    synthesis.router,
+    prefix="/api/synthesis", tags=["synthesis"],
+)
+app.include_router(
+    sources.router,
+    prefix="/api/sources", tags=["sources"],
+)
 
 
 if __name__ == "__main__":

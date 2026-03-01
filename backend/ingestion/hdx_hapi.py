@@ -1,5 +1,6 @@
 """HDX HAPI ingester -- primary data source for Sudan humanitarian data."""
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -27,7 +28,9 @@ def parse_dt(s):
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00").replace("+00:00", ""))
+        cleaned = s.replace("Z", "+00:00")
+        cleaned = cleaned.replace("+00:00", "")
+        return datetime.fromisoformat(cleaned)
     except (ValueError, AttributeError):
         return None
 
@@ -98,6 +101,9 @@ class HDXHAPIIngester(BaseIngester):
             offset += limit
             if len(results) < limit:
                 break
+
+            # Rate limit: 1 second between pages
+            await asyncio.sleep(1)
 
         logger.info(
             "Fetched %d recent of %d total from %s",
@@ -196,7 +202,9 @@ class HDXHAPIIngester(BaseIngester):
         logger.info("HDX HAPI IDPs: %d records", count)
         return count
 
-    async def _fetch_food_security(self, db: AsyncSession, headers: dict) -> int:
+    async def _fetch_food_security(
+        self, db: AsyncSession, headers: dict,
+    ) -> int:
         url = f"{BASE_URL}/food/food-security"
         rows = await self._paginate(url, headers)
         count = 0
@@ -214,7 +222,9 @@ class HDXHAPIIngester(BaseIngester):
                 ipc_phase=row.get("ipc_phase"),
                 ipc_type=row.get("ipc_type"),
                 population_in_phase=row.get("population_in_phase", 0),
-                population_fraction_in_phase=row.get("population_fraction_in_phase"),
+                population_fraction_in_phase=row.get(
+                    "population_fraction_in_phase"
+                ),
                 reference_period_start=ref_start,
                 reference_period_end=parse_dt(row.get("reference_period_end")),
             ))
@@ -224,7 +234,10 @@ class HDXHAPIIngester(BaseIngester):
             await db.commit()
         except Exception as e:
             await db.rollback()
-            logger.warning("Food security batch insert failed: %s", str(e)[:200])
+            logger.warning(
+                "Food security insert failed: %s",
+                str(e)[:200],
+            )
 
         logger.info("HDX HAPI food security: %d records", count)
         return count
@@ -269,7 +282,9 @@ class HDXHAPIIngester(BaseIngester):
         logger.info("HDX HAPI food prices: %d records", count)
         return count
 
-    async def _fetch_humanitarian_needs(self, db: AsyncSession, headers: dict) -> int:
+    async def _fetch_humanitarian_needs(
+        self, db: AsyncSession, headers: dict,
+    ) -> int:
         url = f"{BASE_URL}/affected-people/humanitarian-needs"
         rows = await self._paginate(url, headers)
         count = 0
@@ -297,12 +312,17 @@ class HDXHAPIIngester(BaseIngester):
             await db.commit()
         except Exception as e:
             await db.rollback()
-            logger.warning("Humanitarian needs batch insert failed: %s", str(e)[:200])
+            logger.warning(
+                "Humanitarian needs insert: %s",
+                str(e)[:200],
+            )
 
         logger.info("HDX HAPI humanitarian needs: %d records", count)
         return count
 
-    async def _fetch_operational_presence(self, db: AsyncSession, headers: dict) -> int:
+    async def _fetch_operational_presence(
+        self, db: AsyncSession, headers: dict,
+    ) -> int:
         url = f"{BASE_URL}/coordination-context/operational-presence"
         rows = await self._paginate(url, headers)
         count = 0
@@ -332,7 +352,10 @@ class HDXHAPIIngester(BaseIngester):
             await db.commit()
         except Exception as e:
             await db.rollback()
-            logger.warning("Operational presence batch insert failed: %s", str(e)[:200])
+            logger.warning(
+                "Ops presence insert: %s",
+                str(e)[:200],
+            )
 
         logger.info("HDX HAPI operational presence: %d records", count)
         return count
