@@ -53,6 +53,7 @@ export default function RegionDetail() {
   const foodSecurity = region?.food_security || [];
   const orgs = region?.operational_presence || [];
   const foodPrices = region?.food_prices || [];
+  const humanitarianNeeds = region?.humanitarian_needs || [];
 
   const totalEvents = conflicts.reduce((s, c) => s + (c.events || 0), 0);
   const totalFatalities = conflicts.reduce((s, c) => s + (c.fatalities || 0), 0);
@@ -134,6 +135,33 @@ export default function RegionDetail() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Humanitarian Needs by Sector */}
+      {humanitarianNeeds.length > 0 && (
+        <div className="bg-gray-900 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Humanitarian Needs by Sector</h3>
+          <div className="space-y-2">
+            {humanitarianNeeds.map((n, i) => {
+              const maxPop = humanitarianNeeds[0]?.population || 1;
+              const pct = (n.population / maxPop) * 100;
+              return (
+                <div key={i}>
+                  <div className="flex items-center justify-between text-sm mb-0.5">
+                    <span className="text-gray-400">{n.sector}</span>
+                    <span className="text-white font-medium">{n.population.toLocaleString()}</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5">
+                    <div
+                      className="bg-brand-teal h-1.5 rounded-full"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.database import get_db
 from backend.models.models import (
     ConflictEvent, Displacement, FoodSecurity,
-    FoodPrice, OperationalPresence,
+    FoodPrice, HumanitarianNeed, OperationalPresence,
 )
 
 router = APIRouter()
@@ -333,6 +333,32 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
         for r in price_result.all()
     ]
 
+    # Humanitarian needs by sector
+    needs_result = await db.execute(
+        select(
+            HumanitarianNeed.sector_name,
+            func.sum(
+                HumanitarianNeed.population
+            ).label("pop"),
+        ).where(
+            HumanitarianNeed.admin1_code == admin1_code,
+        ).group_by(
+            HumanitarianNeed.sector_name,
+        ).order_by(
+            func.sum(
+                HumanitarianNeed.population
+            ).desc()
+        )
+    )
+    humanitarian_needs = [
+        {
+            "sector": r.sector_name,
+            "population": r.pop,
+        }
+        for r in needs_result.all()
+        if r.pop and r.pop > 0
+    ]
+
     return {
         "admin1_code": admin1_code,
         "admin1_name": admin1_name,
@@ -346,5 +372,6 @@ async def get_region(admin1_code: str, db: AsyncSession = Depends(get_db)):
         "displacement": displacements,
         "food_security": food_security,
         "food_prices": food_prices,
+        "humanitarian_needs": humanitarian_needs,
         "operational_presence": orgs,
     }

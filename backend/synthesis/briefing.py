@@ -11,8 +11,11 @@ from backend.models.models import (
     ConflictEvent, Displacement, FoodSecurity, FoodPrice,
     NewsArticle, SynthesisBrief, DataSourceStatus,
 )
+from backend.models.models import OperationalPresence
 from backend.synthesis.ollama_client import OllamaClient
-from backend.synthesis.prompts import NATIONAL_BRIEF_PROMPT
+from backend.synthesis.prompts import (
+    NATIONAL_BRIEF_PROMPT, REGION_BRIEF_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,175 @@ class BriefingGenerator:
             logger.info("National brief generated: %d chars", len(content))
 
         return content
+
+    async def generate_region_brief(
+        self, db: AsyncSession,
+        admin1_code: str, admin1_name: str,
+    ) -> str:
+        now = datetime.utcnow()
+
+        if not await self.ollama.is_available():
+            return None
+
+        conflict = await self._region_conflict(
+            db, admin1_code
+        )
+        displacement = await self._region_displacement(
+            db, admin1_code
+        )
+        food_sec = await self._region_food_security(
+            db, admin1_code
+        )
+        ops = await self._region_ops(db, admin1_code)
+
+        prompt = REGION_BRIEF_PROMPT.format(
+            region_name=admin1_name,
+            conflict=conflict,
+            displacement=displacement,
+            food_security=food_sec,
+            ops_presence=ops,
+            date=now.strftime("%Y-%m-%d"),
+        )
+
+        content = await self.ollama.generate(prompt)
+
+        if content and not content.startswith("[Ollama"):
+            brief = SynthesisBrief(
+                scope="admin1",
+                region_code=admin1_code,
+                brief_type="situation_overview",
+                content=content,
+                model_used=settings.OLLAMA_MODEL,
+                data_window_start=now,
+                data_window_end=now,
+                generated_at=now,
+            )
+            db.add(brief)
+            await db.commit()
+            logger.info(
+                "Region brief %s: %d chars",
+                admin1_code, len(content),
+            )
+
+        return content
+
+    async def _region_conflict(
+        self, db: AsyncSession, code: str,
+    ) -> str:
+        result = await db.execute(
+            select(
+                ConflictEvent.event_type,
+                func.sum(ConflictEvent.events).label("ev"),
+                func.sum(
+                    ConflictEvent.fatalities
+                ).label("fat"),
+            ).where(
+                ConflictEvent.admin1_code == code,
+            ).group_by(ConflictEvent.event_type)
+            .order_by(
+                func.sum(ConflictEvent.fatalities).desc()
+            )
+        )
+        rows = result.all()
+        if not rows:
+            return "No conflict data."
+        total_ev = sum(r.ev or 0 for r in rows)
+        total_fat = sum(r.fat or 0 for r in rows)
+        lines = [f"Total: {total_ev} events, "
+                 f"{total_fat} fatalities"]
+        for r in rows[:5]:
+            lines.append(
+                f"- {r.event_type}: {r.ev} events, "
+                f"{r.fat} fatalities"
+            )
+        return "\n".join(lines)
+
+    async def _region_displacement(
+        self, db: AsyncSession, code: str,
+    ) -> str:
+        result = await db.execute(
+            select(
+                Displacement.admin2_name,
+                func.sum(
+                    Displacement.population
+                ).label("pop"),
+            ).where(
+                Displacement.admin1_code == code,
+                Displacement.displacement_type == "idp",
+                Displacement.admin2_name.isnot(None),
+            ).group_by(Displacement.admin2_name)
+            .order_by(
+                func.sum(Displacement.population).desc()
+            )
+        )
+        rows = result.all()
+        if not rows:
+            return "No displacement data."
+        lines = []
+        for r in rows[:10]:
+            lines.append(
+                f"- {r.admin2_name}: {r.pop:,} IDPs"
+            )
+        return "\n".join(lines)
+
+    async def _region_food_security(
+        self, db: AsyncSession, code: str,
+    ) -> str:
+        result = await db.execute(
+            select(
+                FoodSecurity.ipc_phase,
+                func.sum(
+                    FoodSecurity.population_in_phase
+                ).label("pop"),
+            ).where(
+                FoodSecurity.admin1_code == code,
+            ).group_by(FoodSecurity.ipc_phase)
+            .order_by(FoodSecurity.ipc_phase)
+        )
+        rows = result.all()
+        if not rows:
+            return "No food security data."
+        labels = {
+            "1": "Minimal", "2": "Stressed",
+            "3": "Crisis", "4": "Emergency",
+            "5": "Famine",
+        }
+        lines = []
+        for r in rows:
+            label = labels.get(
+                r.ipc_phase, f"Phase {r.ipc_phase}"
+            )
+            lines.append(
+                f"- Phase {r.ipc_phase} ({label}): "
+                f"{(r.pop or 0):,}"
+            )
+        return "\n".join(lines)
+
+    async def _region_ops(
+        self, db: AsyncSession, code: str,
+    ) -> str:
+        result = await db.execute(
+            select(
+                OperationalPresence.sector_name,
+                func.count(func.distinct(
+                    OperationalPresence.org_acronym
+                )).label("orgs"),
+            ).where(
+                OperationalPresence.admin1_code == code,
+            ).group_by(OperationalPresence.sector_name)
+            .order_by(func.count(func.distinct(
+                OperationalPresence.org_acronym
+            )).desc())
+        )
+        rows = result.all()
+        if not rows:
+            return "No operational data."
+        lines = []
+        for r in rows[:10]:
+            lines.append(
+                f"- {r.sector_name}: {r.orgs} orgs"
+            )
+        return "\n".join(lines)
 
     async def _summarize_conflict(self, db: AsyncSession) -> str:
         result = await db.execute(
