@@ -8,7 +8,7 @@ in-time counts), not flows.  Summing them across periods is wrong.
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select, desc
+from sqlalchemy import and_, func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.database import get_db
@@ -288,35 +288,46 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
 
 
 async def _get_refugees_abroad(db: AsyncSession):
-    """Get latest refugee counts by country of asylum."""
-    latest_q = await db.execute(
+    """Get latest refugee counts by country of asylum.
+
+    Uses per-country MAX(date) so countries with different
+    latest-record dates all appear (fixes single-country bug).
+    """
+    excluded = ["SUD", "-", ""]
+
+    # Subquery: latest date per asylum country
+    subq = (
         select(
-            func.max(Displacement.reference_period_start)
+            Displacement.admin1_code,
+            func.max(
+                Displacement.reference_period_start
+            ).label("max_date"),
         ).where(
             Displacement.source == "unhcr",
             Displacement.displacement_type == "refugee",
-            Displacement.admin1_code.notin_(
-                ["SUD", "-", ""]
-            ),
-        )
-    )
-    latest = latest_q.scalar()
-    if not latest:
-        return []
+            Displacement.admin1_code.notin_(excluded),
+        ).group_by(Displacement.admin1_code)
+    ).subquery()
 
     result = await db.execute(
         select(
             Displacement.admin1_code,
             Displacement.admin1_name,
             Displacement.population,
+        ).join(
+            subq,
+            and_(
+                Displacement.admin1_code
+                == subq.c.admin1_code,
+                Displacement.reference_period_start
+                == subq.c.max_date,
+            ),
         ).where(
             Displacement.source == "unhcr",
             Displacement.displacement_type == "refugee",
-            Displacement.reference_period_start == latest,
-            Displacement.admin1_code.notin_(
-                ["SUD", "-", ""]
-            ),
-        ).order_by(Displacement.population.desc()).limit(10)
+        ).order_by(
+            Displacement.population.desc()
+        ).limit(10)
     )
     return [
         {

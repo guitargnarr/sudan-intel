@@ -86,12 +86,13 @@ class UNHCRIngester(BaseIngester):
         breakdown by destination.
         """
         # Top asylum countries for Sudanese refugees
+        # UNHCR uses its own country codes, NOT ISO-3166
         asylum_countries = {
-            "TCD": "Chad",
-            "EGY": "Egypt",
+            "CHD": "Chad",
+            "ARE": "Egypt",
             "SSD": "South Sudan",
             "ETH": "Ethiopia",
-            "CAF": "Central African Republic",
+            "CAR": "Central African Republic",
             "ISR": "Israel",
             "KEN": "Kenya",
             "UGA": "Uganda",
