@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import Hero from '../components/hero/Hero';
 import KPICard from '../components/cards/KPICard';
 import ConflictTimeline from '../components/charts/ConflictTimeline';
-import SudanMap from '../components/maps/SudanMap';
+import SudanMapGL from '../components/maps/SudanMapGL';
 import NewsFeed from '../components/news/NewsFeed';
 import AIBriefing from '../components/synthesis/AIBriefing';
 import {
@@ -189,7 +189,7 @@ export default function Dashboard() {
       {/* Map + News */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <SudanMap regions={regions} />
+          <SudanMapGL regions={regions} conflictTimeline={dashboard?.conflict_timeline} />
         </div>
         <div>
           <NewsFeed articles={news?.articles} />
