@@ -192,21 +192,27 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     )
     active_orgs = org_result.scalar() or 0
 
-    # Conflict timeline by admin1
+    # Conflict timeline by admin1 + event_type (for animated map)
     conflict_timeline = await db.execute(
         select(
             ConflictEvent.admin1_name,
+            ConflictEvent.admin1_code,
+            ConflictEvent.event_type,
             ConflictEvent.reference_period_start,
             func.sum(ConflictEvent.events).label("events"),
             func.sum(ConflictEvent.fatalities).label("fatalities"),
         ).group_by(
             ConflictEvent.admin1_name,
+            ConflictEvent.admin1_code,
+            ConflictEvent.event_type,
             ConflictEvent.reference_period_start,
         ).order_by(ConflictEvent.reference_period_start)
     )
     timeline = [
         {
             "region": r.admin1_name,
+            "region_code": r.admin1_code,
+            "event_type": r.event_type,
             "date": (
                 r.reference_period_start.isoformat()
                 if r.reference_period_start else None
