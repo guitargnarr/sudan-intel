@@ -31,7 +31,7 @@ class ReliefWebIngester(BaseIngester):
 
     async def fetch(self, db: AsyncSession) -> int:
         params = [
-            ("appname", "sudan-intel"),
+            ("appname", "mscott-sudan-intel-k7x99E0S2D8P3UddCKRjE"),
             ("filter[field]", "country"),
             ("filter[value]", "Sudan"),
             ("sort[]", "date:desc"),

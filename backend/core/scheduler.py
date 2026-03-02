@@ -50,17 +50,15 @@ class IngestScheduler:
                 next_run_time=now,
             )
 
-            # ReliefWeb disabled: appname registration pending
-            # Uncomment when approved appname is configured
-            # self.scheduler.add_job(
-            #     self._run_reliefweb,
-            #     "interval",
-            #     hours=1,
-            #     id="reliefweb",
-            #     name="ReliefWeb Reports Ingestion",
-            #     replace_existing=True,
-            #     next_run_time=now,
-            # )
+            self.scheduler.add_job(
+                self._run_reliefweb,
+                "interval",
+                hours=1,
+                id="reliefweb",
+                name="ReliefWeb Reports Ingestion",
+                replace_existing=True,
+                next_run_time=now,
+            )
 
             self.scheduler.add_job(
                 self._run_synthesis,
