@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import Hero from '../components/hero/Hero';
 import KPICard from '../components/cards/KPICard';
 import ConflictTimeline from '../components/charts/ConflictTimeline';
 import SudanMap from '../components/maps/SudanMap';
 import NewsFeed from '../components/news/NewsFeed';
 import AIBriefing from '../components/synthesis/AIBriefing';
-import { Loader2, CheckCircle, AlertCircle, Clock, RefreshCw, ChevronDown, Info } from 'lucide-react';
-
-const SOURCE_LABELS = {
-  hdx_hapi: 'HDX HAPI',
-  gdelt: 'GDELT News',
-  unhcr: 'UNHCR',
-  reliefweb: 'ReliefWeb',
-};
+import {
+  Loader2, CheckCircle, AlertCircle,
+  ChevronDown, Info,
+} from 'lucide-react';
 
 function timeAgo(iso) {
   if (!iso) return 'never';
@@ -35,13 +32,18 @@ function freshnessColor(iso) {
   return 'text-red-400';
 }
 
+const SOURCE_LABELS = {
+  hdx_hapi: 'HDX HAPI',
+  gdelt: 'GDELT',
+  unhcr: 'UNHCR',
+};
+
 export default function Dashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [regions, setRegions] = useState(null);
   const [news, setNews] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fetchedAt, setFetchedAt] = useState(null);
   const [showMethodology, setShowMethodology] = useState(false);
 
   useEffect(() => {
@@ -55,7 +57,6 @@ export default function Dashboard() {
         setDashboard(d);
         setRegions(r);
         setNews(n);
-        setFetchedAt(d.server_time || new Date().toISOString());
       } catch (e) {
         setError(e.message);
       } finally {
@@ -67,94 +68,71 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 text-brand-teal animate-spin" />
-        <span className="ml-3 text-gray-400">Loading humanitarian data...</span>
-      </div>
+      <>
+        <Hero />
+        <div className="flex flex-col items-center justify-center py-24">
+          <Loader2 className="w-6 h-6 text-brand-teal animate-spin" />
+          <span className="mt-3 text-sm text-gray-600">
+            Connecting to data sources...
+          </span>
+        </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-900/20 border border-red-800 rounded-lg p-6 text-center">
-        <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-        <div className="text-red-300">{error}</div>
-        <div className="text-xs text-gray-500 mt-2">
-          Ensure the backend is running on port 8900
+      <>
+        <Hero />
+        <div className="flex flex-col items-center justify-center py-24">
+          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center mb-3">
+            <AlertCircle className="w-5 h-5 text-red-400" />
+          </div>
+          <div className="text-sm text-gray-400">
+            Unable to reach data backend
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 text-xs tracking-wide uppercase text-brand-teal border border-brand-teal/20 rounded-lg hover:bg-brand-teal/10 transition-colors"
+          >
+            Retry
+          </button>
         </div>
-      </div>
+      </>
     );
   }
 
   const kpis = dashboard?.kpis || {};
-
-  const freshness = dashboard?.data_freshness || [];
-  const allHealthy = freshness.length > 0 && freshness.every(s => s.is_healthy);
-  const totalRecords = freshness.reduce((sum, s) => sum + (s.records || 0), 0);
+  const freshness = (dashboard?.data_freshness || [])
+    .filter(s => s.source !== 'reliefweb');
+  const healthyCount = freshness.filter(s => s.is_healthy).length;
 
   return (
-    <div className="space-y-6">
-      {/* Data Verification Bar */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            {allHealthy ? (
-              <CheckCircle className="w-4 h-4 text-green-500" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-yellow-500" />
-            )}
-            <span className="text-sm font-medium text-gray-300">
-              {allHealthy ? 'All sources verified' : 'Source issues detected'}
-            </span>
-            <span className="text-xs text-gray-600 hidden sm:inline">
-              {totalRecords.toLocaleString()} total records
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500">
-            <Clock className="w-3 h-3" />
-            <span>
-              Page loaded {fetchedAt
-                ? new Date(fetchedAt.endsWith('Z') ? fetchedAt : fetchedAt + 'Z').toLocaleString('en-US', {
-                    month: 'short', day: 'numeric',
-                    hour: '2-digit', minute: '2-digit', hour12: true,
-                  })
-                : '--'}
-            </span>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-gray-800">
+    <div className="space-y-8">
+      <Hero />
+
+      {/* Inline source status -- minimal */}
+      <div className="flex items-center justify-between flex-wrap gap-3 px-1">
+        <div className="flex items-center gap-4">
           {freshness.map((s) => (
-            <div key={s.source} className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                {s.is_healthy ? (
-                  <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 text-red-500 flex-shrink-0" />
-                )}
-                <span className="text-gray-300 font-medium">
-                  {SOURCE_LABELS[s.source] || s.source}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-right">
-                <span className="text-gray-500">
-                  {(s.records || 0).toLocaleString()} rows
-                </span>
-                <span className={freshnessColor(s.last_success)}>
-                  {timeAgo(s.last_success)}
-                </span>
-              </div>
+            <div key={s.source} className="flex items-center gap-1.5 text-xs">
+              {s.is_healthy ? (
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              ) : (
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              )}
+              <span className="text-gray-500">
+                {SOURCE_LABELS[s.source] || s.source}
+              </span>
+              <span className={`${freshnessColor(s.last_success)}`}>
+                {timeAgo(s.last_success)}
+              </span>
             </div>
           ))}
         </div>
-        {freshness.some(s => !s.is_healthy) && (
-          <div className="mt-2 pt-2 border-t border-gray-800">
-            {freshness.filter(s => !s.is_healthy).map(s => (
-              <div key={s.source + '-err'} className="text-xs text-red-400">
-                {SOURCE_LABELS[s.source] || s.source}: {s.last_error || 'Unhealthy'}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="text-[10px] text-gray-700 tracking-wide">
+          {healthyCount}/{freshness.length} sources active
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -164,7 +142,7 @@ export default function Dashboard() {
           value={kpis.total_idps}
           delta={kpis.idp_change}
           sublabel={kpis.idp_period
-            ? `${kpis.idp_source || 'IOM DTM'} - ${new Date(kpis.idp_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}${kpis.idp_change_pct != null ? ` (${kpis.idp_change_pct > 0 ? '+' : ''}${kpis.idp_change_pct}%)` : ''}`
+            ? `${kpis.idp_source || 'IOM DTM'} \u2014 ${new Date(kpis.idp_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
             : kpis.idp_source || 'Latest figure'}
           color="orange"
         />
@@ -205,11 +183,12 @@ export default function Dashboard() {
 
       {/* Food Prices + Refugees Abroad */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Food Prices */}
         {dashboard?.food_prices?.length > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">Commodity Prices</h3>
-            <div className="space-y-2">
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-5">
+            <h3 className="text-xs font-medium tracking-wide uppercase text-gray-500 mb-4">
+              Commodity Prices
+            </h3>
+            <div className="space-y-2.5">
               {dashboard.food_prices.map((p, i) => (
                 <div key={i} className="flex items-center justify-between text-sm">
                   <span className="text-gray-400 truncate mr-2">{p.commodity}</span>
@@ -222,25 +201,26 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Refugees Abroad */}
         {dashboard?.refugees_abroad?.length > 0 && (
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-5">
+            <h3 className="text-xs font-medium tracking-wide uppercase text-gray-500 mb-4">
               Sudanese Refugees by Country of Asylum
             </h3>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {dashboard.refugees_abroad.map((r, i) => {
                 const maxPop = dashboard.refugees_abroad[0]?.refugees || 1;
                 const pct = (r.refugees / maxPop) * 100;
                 return (
                   <div key={i}>
-                    <div className="flex items-center justify-between text-sm mb-0.5">
+                    <div className="flex items-center justify-between text-sm mb-1">
                       <span className="text-gray-400">{r.country}</span>
-                      <span className="text-white font-medium">{r.refugees.toLocaleString()}</span>
+                      <span className="text-white font-medium">
+                        {r.refugees.toLocaleString()}
+                      </span>
                     </div>
-                    <div className="w-full bg-gray-800 rounded-full h-1.5">
+                    <div className="w-full bg-gray-800/50 rounded-full h-1">
                       <div
-                        className="bg-brand-orange h-1.5 rounded-full"
+                        className="bg-brand-orange/80 h-1 rounded-full transition-all duration-700"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -256,42 +236,53 @@ export default function Dashboard() {
       <AIBriefing brief={dashboard?.latest_brief} />
 
       {/* Data Methodology */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg">
+      <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg">
         <button
           onClick={() => setShowMethodology(!showMethodology)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left"
+          className="w-full px-5 py-3.5 flex items-center justify-between text-left"
         >
           <div className="flex items-center gap-2">
-            <Info className="w-4 h-4 text-gray-500" />
-            <span className="text-sm text-gray-400">Data Sources & Methodology</span>
+            <Info className="w-3.5 h-3.5 text-gray-600" />
+            <span className="text-xs tracking-wide text-gray-500">
+              Data Sources & Methodology
+            </span>
           </div>
-          <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showMethodology ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-300 ${showMethodology ? 'rotate-180' : ''}`} />
         </button>
         {showMethodology && (
-          <div className="px-4 pb-4 text-xs text-gray-500 space-y-3 border-t border-gray-800 pt-3">
-            <div>
-              <span className="text-gray-400 font-medium">IDP figures (IOM DTM via HDX HAPI)</span>
-              <p className="mt-0.5">Internally displaced person counts are stock figures representing the total displaced population at a point in time. Sub-national data is aggregated from admin2-level assessments. Figures may differ from other published totals due to assessment timing and methodology differences.</p>
-            </div>
-            <div>
-              <span className="text-gray-400 font-medium">Conflict data (ACLED via HDX HAPI)</span>
-              <p className="mt-0.5">Conflict events and fatalities are sourced from ACLED's coded event data. There is typically a 1-2 week reporting lag. Events in areas with limited access may be undercounted.</p>
-            </div>
-            <div>
-              <span className="text-gray-400 font-medium">Food security (IPC via HDX HAPI)</span>
-              <p className="mt-0.5">IPC phase classifications represent the most recent assessment period. Some areas of Sudan cannot be assessed due to access constraints, meaning Phase 4-5 population figures are likely undercounts of the true emergency population.</p>
-            </div>
-            <div>
-              <span className="text-gray-400 font-medium">Displacement (UNHCR)</span>
-              <p className="mt-0.5">UNHCR figures are national-level annual snapshots of registered refugee and IDP populations. They do not capture unregistered displacement or sub-national distribution.</p>
-            </div>
-            <div>
-              <span className="text-gray-400 font-medium">News (GDELT + ReliefWeb)</span>
-              <p className="mt-0.5">News articles are filtered for Sudan relevance but may include tangential coverage. ReliefWeb reports (marked with RW badge) are verified humanitarian publications. GDELT articles are automated media monitoring.</p>
-            </div>
+          <div className="px-5 pb-5 text-xs text-gray-500 space-y-4 border-t border-white/[0.04] pt-4">
+            <MethodNote
+              title="IDP figures (IOM DTM via HDX HAPI)"
+              body="Stock figures representing total displaced population at a point in time. Sub-national data aggregated from admin2-level assessments."
+            />
+            <MethodNote
+              title="Conflict data (ACLED via HDX HAPI)"
+              body="Coded conflict events and fatalities with 1-2 week reporting lag. Events in areas with limited access may be undercounted."
+            />
+            <MethodNote
+              title="Food security (IPC via HDX HAPI)"
+              body="Most recent IPC phase classifications. Areas with access constraints cannot be assessed -- Phase 4-5 figures are likely undercounts."
+            />
+            <MethodNote
+              title="Displacement (UNHCR)"
+              body="National-level annual snapshots of registered refugee and IDP populations. Does not capture unregistered displacement."
+            />
+            <MethodNote
+              title="News monitoring (GDELT)"
+              body="Filtered for Sudan relevance with domain and keyword verification. Automated media monitoring, not verified reporting."
+            />
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MethodNote({ title, body }) {
+  return (
+    <div>
+      <span className="text-gray-400 font-medium">{title}</span>
+      <p className="mt-0.5 leading-relaxed">{body}</p>
     </div>
   );
 }
