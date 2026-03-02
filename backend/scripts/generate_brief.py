@@ -41,7 +41,7 @@ async def push_brief(
             "brief_type": "situation_overview",
             "model_used": "sudan-intel-analyst",
         },
-        timeout=30,
+        timeout=120,
     )
     resp.raise_for_status()
     return resp.json()
