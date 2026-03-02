@@ -277,6 +277,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         "data_freshness": freshness,
         "food_prices": food_prices,
         "refugees_abroad": await _get_refugees_abroad(db),
+        "refugees_total": await _get_refugees_total(db),
     }
 
 
@@ -319,3 +320,24 @@ async def _get_refugees_abroad(db: AsyncSession):
         }
         for r in result.all()
     ]
+
+
+async def _get_refugees_total(db: AsyncSession):
+    """Get UNHCR aggregate refugee total (latest year)."""
+    result = await db.execute(
+        select(
+            Displacement.population,
+            Displacement.reference_period_start,
+        ).where(
+            Displacement.source == "unhcr",
+            Displacement.displacement_type == "refugee",
+            Displacement.admin1_code == "SUD",
+        ).order_by(
+            Displacement.reference_period_start.desc()
+        ).limit(1)
+    )
+    row = result.first()
+    if row:
+        year = row.reference_period_start.year
+        return {"total": row.population, "year": year}
+    return None

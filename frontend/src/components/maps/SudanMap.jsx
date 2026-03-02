@@ -81,11 +81,15 @@ export default function SudanMap({ regions }) {
     const code = getRegionCode(feature);
     const region = findRegion(feature);
 
+    const fat = region?.fatalities || 0;
+    const fatLine = fat > 0
+      ? `Fatalities: ${fat.toLocaleString()}`
+      : 'Fatalities: No recorded events';
     layer.bindTooltip(
       `<strong>${name}</strong><br/>` +
       `Severity: ${region?.severity || 0}/100<br/>` +
       `IDPs: ${(region?.idps || 0).toLocaleString()}<br/>` +
-      `Fatalities: ${(region?.fatalities || 0).toLocaleString()}`,
+      fatLine,
       { sticky: true }
     );
 

@@ -92,14 +92,29 @@ export default function RegionDetail() {
         <KPICard label="Organizations" value={new Set(orgs.map(o => o.acronym)).size} color="teal" />
       </div>
 
-      {/* Conflict Timeline */}
-      <ConflictTimeline
-        data={conflicts.map(c => ({
-          date: c.date,
-          events: c.events,
-          fatalities: c.fatalities,
-        }))}
-      />
+      {/* Conflict Timeline or no-data note */}
+      {totalEvents > 0 ? (
+        <ConflictTimeline
+          data={conflicts.map(c => ({
+            date: c.date,
+            events: c.events,
+            fatalities: c.fatalities,
+          }))}
+        />
+      ) : (
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-5">
+          <div className="text-xs font-medium tracking-wide uppercase text-gray-500 mb-2">
+            Conflict Events
+          </div>
+          <div className="text-sm text-gray-400">
+            No recorded conflict events in ACLED data for this state.
+          </div>
+          <div className="text-[10px] text-gray-600 mt-1">
+            This does not mean the area is unaffected. ACLED coverage
+            depends on reporting access and may not capture all events.
+          </div>
+        </div>
+      )}
 
       {/* IPC Distribution */}
       {Object.keys(ipcDist).length > 0 && (

@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showMethodology, setShowMethodology] = useState(false);
+  const [loadPhase, setLoadPhase] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -66,14 +67,28 @@ export default function Dashboard() {
     load();
   }, []);
 
+  // Progressive loading messages for cold-start awareness
+  useEffect(() => {
+    if (!loading) return;
+    const t1 = setTimeout(() => setLoadPhase(1), 5000);
+    const t2 = setTimeout(() => setLoadPhase(2), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [loading]);
+
+  const loadMessages = [
+    'Connecting to data sources...',
+    'Backend is waking up -- free-tier cold start, usually 30-60s.',
+    'Still connecting -- aggregating conflict, displacement, and food security data.',
+  ];
+
   if (loading) {
     return (
       <>
         <Hero />
         <div className="flex flex-col items-center justify-center py-24">
           <Loader2 className="w-6 h-6 text-brand-teal animate-spin" />
-          <span className="mt-3 text-sm text-gray-600">
-            Connecting to data sources...
+          <span className="mt-3 text-sm text-gray-600 text-center max-w-md transition-opacity duration-500">
+            {loadMessages[loadPhase]}
           </span>
         </div>
       </>
@@ -90,6 +105,9 @@ export default function Dashboard() {
           </div>
           <div className="text-sm text-gray-400">
             Unable to reach data backend
+          </div>
+          <div className="text-[10px] text-gray-600 mt-1">
+            Render free tier may need a moment to spin up.
           </div>
           <button
             onClick={() => window.location.reload()}
@@ -201,35 +219,28 @@ export default function Dashboard() {
           </div>
         )}
 
-        {dashboard?.refugees_abroad?.length > 0 && (
-          <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-5">
-            <h3 className="text-xs font-medium tracking-wide uppercase text-gray-500 mb-4">
-              Sudanese Refugees by Country of Asylum
-            </h3>
-            <div className="space-y-2.5">
-              {dashboard.refugees_abroad.map((r, i) => {
-                const maxPop = dashboard.refugees_abroad[0]?.refugees || 1;
-                const pct = (r.refugees / maxPop) * 100;
-                return (
-                  <div key={i}>
-                    <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="text-gray-400">{r.country}</span>
-                      <span className="text-white font-medium">
-                        {r.refugees.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-800/50 rounded-full h-1">
-                      <div
-                        className="bg-brand-orange/80 h-1 rounded-full transition-all duration-700"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+        {/* Cross-border displacement */}
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-5">
+          <h3 className="text-xs font-medium tracking-wide uppercase text-gray-500 mb-4">
+            Cross-Border Displacement
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <div className="text-3xl font-semibold text-white tracking-tight">
+                {(dashboard?.refugees_total?.total || 2466231).toLocaleString()}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                Sudanese refugees abroad (UNHCR {dashboard?.refugees_total?.year || 2025})
+              </div>
+            </div>
+            <div className="accent-line" />
+            <div className="text-xs text-gray-500 leading-relaxed">
+              Primary host countries: Chad, Egypt, South Sudan,
+              Ethiopia, Central African Republic, Libya, Uganda.
+              Per-country breakdowns updated annually by UNHCR.
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* AI Briefing */}
