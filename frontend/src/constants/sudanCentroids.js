@@ -51,4 +51,27 @@ export function getCentroid(identifier) {
     || null;
 }
 
-export { CENTROIDS, BY_CODE };
+/**
+ * Centroids for neighboring asylum countries.
+ * Used by displacement flow arcs (ArcLayer).
+ * Keyed by UNHCR country code (NOT ISO-3166).
+ */
+const NEIGHBOR_CENTROIDS = {
+  CHD: { name: 'Chad',                    lon: 15.05, lat: 12.13 },
+  ARE: { name: 'Egypt',                   lon: 31.24, lat: 30.04 },
+  SSD: { name: 'South Sudan',             lon: 31.60, lat:  6.88 },
+  ETH: { name: 'Ethiopia',                lon: 38.75, lat:  9.02 },
+  CAR: { name: 'Central African Republic', lon: 18.56, lat:  4.36 },
+  UGA: { name: 'Uganda',                  lon: 32.58, lat:  0.35 },
+  LBY: { name: 'Libya',                   lon: 17.95, lat: 26.34 },
+  KEN: { name: 'Kenya',                   lon: 36.82, lat: -1.29 },
+  ISR: { name: 'Israel',                  lon: 35.22, lat: 31.77 },
+  SAU: { name: 'Saudi Arabia',            lon: 45.08, lat: 23.89 },
+};
+
+export function getNeighborCentroid(code) {
+  if (!code) return null;
+  return NEIGHBOR_CENTROIDS[code] || null;
+}
+
+export { CENTROIDS, BY_CODE, NEIGHBOR_CENTROIDS };

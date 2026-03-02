@@ -189,7 +189,7 @@ export default function Dashboard() {
       {/* Map + News */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <SudanMapGL regions={regions} conflictTimeline={dashboard?.conflict_timeline} />
+          <SudanMapGL regions={regions} conflictTimeline={dashboard?.conflict_timeline} refugeesAbroad={dashboard?.refugees_abroad} />
         </div>
         <div>
           <NewsFeed articles={news?.articles} />

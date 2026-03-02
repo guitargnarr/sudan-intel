@@ -2,8 +2,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Map, useControl } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { getCentroid } from '../../constants/sudanCentroids';
+import { ArcLayer, GeoJsonLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { getCentroid, getNeighborCentroid } from '../../constants/sudanCentroids';
 import {
   getColorRgba, buildRegionLookup, findRegion, getDisplayName,
 } from '../../utils/mapHelpers';
@@ -23,6 +23,8 @@ const EVENT_TYPE_LABELS = {
   demonstration:      'Demonstrations',
 };
 
+const SUDAN_CENTER = [30.0, 15.5];
+
 const INITIAL_VIEW = {
   longitude: 30.0,
   latitude: 15.5,
@@ -37,10 +39,10 @@ function DeckGLOverlay(props) {
   return null;
 }
 
-export default function SudanMapGL({ regions, conflictTimeline }) {
+export default function SudanMapGL({ regions, conflictTimeline, refugeesAbroad }) {
   const navigate = useNavigate();
   const [geoData, setGeoData] = useState(null);
-  const [viewMode, setViewMode] = useState('both');
+  const [viewMode, setViewMode] = useState('all');
   const [activeTypes, setActiveTypes] = useState(
     new Set(Object.keys(EVENT_TYPE_LABELS))
   );
@@ -138,12 +140,36 @@ export default function SudanMapGL({ regions, conflictTimeline }) {
     [scatterData]
   );
 
+  // Displacement flow arc data
+  const arcData = useMemo(() => {
+    if (!refugeesAbroad) return [];
+    return refugeesAbroad
+      .filter((d) => d.refugees > 0)
+      .map((d) => {
+        const dest = getNeighborCentroid(d.country_code);
+        if (!dest) return null;
+        return {
+          source: SUDAN_CENTER,
+          target: [dest.lon, dest.lat],
+          refugees: d.refugees,
+          country: d.country,
+          countryCode: d.country_code,
+        };
+      })
+      .filter(Boolean);
+  }, [refugeesAbroad]);
+
+  const maxRefugees = useMemo(
+    () => Math.max(...arcData.map((d) => d.refugees), 1),
+    [arcData]
+  );
+
   // deck.gl layers
   const layers = useMemo(() => {
     const result = [];
 
     // Choropleth layer
-    if (geoData && (viewMode === 'severity' || viewMode === 'both')) {
+    if (geoData && (viewMode === 'severity' || viewMode === 'all')) {
       result.push(
         new GeoJsonLayer({
           id: 'choropleth',
@@ -175,7 +201,7 @@ export default function SudanMapGL({ regions, conflictTimeline }) {
     // Conflict event scatterplot
     if (
       scatterData.length > 0 &&
-      (viewMode === 'events' || viewMode === 'both')
+      (viewMode === 'events' || viewMode === 'all')
     ) {
       result.push(
         new ScatterplotLayer({
@@ -210,10 +236,59 @@ export default function SudanMapGL({ regions, conflictTimeline }) {
       );
     }
 
+    // Displacement flow arcs
+    if (
+      arcData.length > 0 &&
+      (viewMode === 'flows' || viewMode === 'all')
+    ) {
+      result.push(
+        new ArcLayer({
+          id: 'displacement-flows',
+          data: arcData,
+          getSourcePosition: (d) => d.source,
+          getTargetPosition: (d) => d.target,
+          getSourceColor: [249, 115, 22, 200],
+          getTargetColor: [20, 184, 166, 180],
+          getWidth: (d) =>
+            1 + (Math.log(1 + d.refugees) / Math.log(1 + maxRefugees)) * 6,
+          widthUnits: 'pixels',
+          getHeight: 0.3,
+          pickable: true,
+          transitions: {
+            getWidth: { duration: 300 },
+          },
+          updateTriggers: {
+            getWidth: [maxRefugees],
+          },
+        })
+      );
+
+      // Destination country dots
+      result.push(
+        new ScatterplotLayer({
+          id: 'destination-dots',
+          data: arcData,
+          getPosition: (d) => d.target,
+          getRadius: (d) => {
+            const t =
+              Math.log(1 + d.refugees) / Math.log(1 + maxRefugees);
+            return 6000 + t * 30000;
+          },
+          getFillColor: [20, 184, 166, 140],
+          radiusUnits: 'meters',
+          pickable: true,
+          updateTriggers: {
+            getRadius: [maxRefugees],
+          },
+        })
+      );
+    }
+
     return result;
   }, [
     geoData, viewMode, regionLookup, scatterData,
     maxEvents, maxFatalities, navigate,
+    arcData, maxRefugees,
   ]);
 
   // Tooltip handler
@@ -267,6 +342,15 @@ export default function SudanMapGL({ regions, conflictTimeline }) {
         };
       }
 
+      if (layer?.id === 'displacement-flows' || layer?.id === 'destination-dots') {
+        return {
+          html:
+            `<strong>${object.country}</strong><br/>` +
+            `Sudanese refugees: ${object.refugees.toLocaleString()}`,
+          style,
+        };
+      }
+
       return null;
     },
     [regionLookup]
@@ -301,7 +385,8 @@ export default function SudanMapGL({ regions, conflictTimeline }) {
           {[
             ['severity', 'Severity'],
             ['events', 'Events'],
-            ['both', 'Both'],
+            ['flows', 'Flows'],
+            ['all', 'All'],
           ].map(([mode, label]) => (
             <button
               key={mode}
@@ -337,7 +422,7 @@ export default function SudanMapGL({ regions, conflictTimeline }) {
       </div>
 
       {/* Time controls */}
-      {(viewMode === 'events' || viewMode === 'both') &&
+      {(viewMode === 'events' || viewMode === 'all') &&
         periods.length > 0 && (
           <div className="mt-3 space-y-2">
             <div className="flex items-center gap-3">
